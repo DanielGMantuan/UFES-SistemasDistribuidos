@@ -13,6 +13,7 @@ public class Processo implements Runnable {
     public boolean running = true;
     public boolean active = true;
     public Processo coordenador;
+    public boolean estaElegendo = false;
     
     public Processo(int pId, int porta) {
         this.pId = pId;
@@ -45,26 +46,36 @@ public class Processo implements Runnable {
                                     iniciarEleicao();
                                 }
                                 else{
-                                    if(message.equals("processar")){
-                                        todosProcessar();
-                                        randomizeProcess();
-                                        if(active && this.coordenador.pId != this.pId){
-                                            notificarLider();
-                                        }
-                                        System.out.println("Processo " + this.pId + " terminou processamento");
+                                    if(message.equals("elegendo")){
+                                        this.estaElegendo = true;
                                     }
                                     else{
-                                        if(message.equals("desativar")){
-                                            this.active = false;
+                                        if(message.equals("processar")){
+                                            todosProcessar();
+                                            randomizeProcess();
+                                            System.out.println("Processo " + this.pId + " terminou processamento");
+                                            if(active && this.coordenador.pId != this.pId && !this.estaElegendo){
+                                                notificarLider();
+                                            }
                                         }
                                         else{
-                                            try{
-                                               int novoOperador = Integer.parseInt(message);
-                                               System.out.println(this.pId + " - Coordernador settado para " + novoOperador);
-                                               this.coordenador = processos[novoOperador]; 
+                                            if(message.equals("desativar")){
+                                                this.active = false;
                                             }
-                                            catch(NumberFormatException e){
-                                                System.out.println("mesagem nao entrou em nada :" + message);
+                                            else{
+                                                if(message.equals("TerminoEleicao")){
+                                                    this.estaElegendo = false;
+                                                }
+                                                else{
+                                                    try{
+                                                       int novoOperador = Integer.parseInt(message);
+                                                       System.out.println(this.pId + " - Coordernador settado para " + novoOperador);
+                                                       this.coordenador = processos[novoOperador]; 
+                                                    }
+                                                    catch(NumberFormatException e){
+                                                        System.out.println("mesagem nao entrou em nada :" + message);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -89,6 +100,7 @@ public class Processo implements Runnable {
     public void notificarLider() {
         //Notificar o Lider
         try{
+            var leader = this.coordenador;
             Socket soc = new Socket("localhost", coordenador.porta);
             PrintStream outr = new PrintStream(soc.getOutputStream());
             BufferedReader reader = new BufferedReader(new InputStreamReader(soc.getInputStream()));
@@ -106,7 +118,11 @@ public class Processo implements Runnable {
                     System.out.println("O lider respondeu: " + response);
                 }
             } catch (TimeoutException e) {
-                iniciarEleicao();
+                if(!estaElegendo && leader.pId == this.coordenador.pId) {
+                    System.out.println(this.pId + " - Lider " + leader.pId + " nao respondeu");
+                    notificarInicioEleicao();
+                    iniciarEleicao();
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -117,6 +133,46 @@ public class Processo implements Runnable {
         catch(Exception exception){
             System.out.println("Error notificar leader: " + exception.getMessage());
             exception.printStackTrace();
+        }
+    }
+
+    public void notificarInicioEleicao(){
+        //Iniciar eleicao
+        this.estaElegendo = true;
+        System.out.println(this.pId + " - Notificando inicio eleicao ");
+        for (Processo processo : processos) {
+            if(processo.pId != this.pId ){
+                try{
+                    Socket soc = new Socket("localhost", processo.porta);
+                    PrintStream outr = new PrintStream(soc.getOutputStream());
+                    outr.println("elegendo");
+                    soc.close();
+                }
+                catch (Exception exception){
+                    System.out.println("Error ao notificar inicio eleicao: " + exception.getMessage());
+                    exception.printStackTrace();
+                }
+           }
+        }
+    }
+
+    public void notificarTerminoEleicao(){
+        //Iniciar eleicao
+        this.estaElegendo = false;
+        System.out.println(this.pId + " - Notificando termino eleicao ");
+        for (Processo processo : processos) {
+            if(processo.pId != this.pId ){
+                try{
+                    Socket soc = new Socket("localhost", processo.porta);
+                    PrintStream outr = new PrintStream(soc.getOutputStream());
+                    outr.println("TerminoEleicao");
+                    soc.close();
+                }
+                catch (Exception exception){
+                    System.out.println("Error ao notificar inicio eleicao: " + exception.getMessage());
+                    exception.printStackTrace();
+                }
+           }
         }
     }
 
@@ -165,6 +221,7 @@ public class Processo implements Runnable {
         if(flag){
             this.coordenador = this;
             notificarNovoLider();
+            notificarTerminoEleicao();
         }
     }
 
@@ -189,17 +246,19 @@ public class Processo implements Runnable {
     public void notificarNovoLider(){
         //Notificar o novo Lider
         for (Processo processo : processos) {
-            System.out.println(this.pId  + " notificar -> " + processo.pId);
             if(processo.pId != this.pId ){
-                try{
-                    Socket soc = new Socket("localhost", processo.porta);
-                    PrintStream outr = new PrintStream(soc.getOutputStream());
-                    outr.println(String.valueOf(this.pId));
-                    soc.close();
-                }
-                catch (Exception exception){
-                    System.out.println("Error start eleicao: " + exception.getMessage());
-                    exception.printStackTrace();
+                System.out.println(this.pId  + " notificar -> " + processo.pId);
+                if(processo.pId != this.pId ){
+                    try{
+                        Socket soc = new Socket("localhost", processo.porta);
+                        PrintStream outr = new PrintStream(soc.getOutputStream());
+                        outr.println(String.valueOf(this.pId));
+                        soc.close();
+                    }
+                    catch (Exception exception){
+                        System.out.println("Error start eleicao: " + exception.getMessage());
+                        exception.printStackTrace();
+                    }
                 }
             }
         }
