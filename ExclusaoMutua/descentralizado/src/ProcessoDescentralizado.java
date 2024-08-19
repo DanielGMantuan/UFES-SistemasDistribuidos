@@ -17,14 +17,15 @@ public class ProcessoDescentralizado implements Runnable {
     public int pId;
     public boolean estaRegiaoCritica = false;
     public boolean queroEntrarNaRegiaoCritica = false;
-    
+    public int liberado = 0;
+
 
     public ProcessoDescentralizado(int porta, int id) {
         this.regiaoCriticaQueue = new ArrayList<Mensagem>();
         this.porta = porta;
         this.pId = id;
     }
-
+    //TODO: fica melhor transformar todas as entradas em stirng e so serializar e deserializar quando precisar
     @Override
     public void run() {
         try{
@@ -43,11 +44,13 @@ public class ProcessoDescentralizado implements Runnable {
                                     if(this.queroEntrarNaRegiaoCritica){
                                         // Se a operacao e critica verifica qual tem prioridade pelo timestamp
                                         this.regiaoCriticaQueue.add(m);
-                                        this.regiaoCriticaQueue.sort(Comparator.comparing(me -> me.timestamp));
-    
+                                        this.regiaoCriticaQueue.sort(Comparator.comparing(me -> me.timestamp.getTime()));
+
                                         // Se o processo for o primeiro da fila
                                         if(this.regiaoCriticaQueue.get(0).idProcesso == this.pId){
-                                            processar();
+                                            if(liberado == processos.size()-1){
+                                                processar();
+                                            }
                                         }
                                         else{
                                             outr.println("OK");
@@ -61,18 +64,21 @@ public class ProcessoDescentralizado implements Runnable {
                                 else{
                                     //Esta na regiao cricita entao so enfileira
                                     this.regiaoCriticaQueue.add(m);
-                                    this.regiaoCriticaQueue.sort(Comparator.comparing(me -> me.timestamp));
+                                    this.regiaoCriticaQueue.sort(Comparator.comparing(me -> me.timestamp.getTime()));
                                 }
                             }
                         }
                         catch(Exception e){
-                            BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream()));
-                            PrintStream outr = new PrintStream(s.getOutputStream());
-                            
-                            this.regiaoCriticaQueue.remove(0);
-                            processar();
+                            // System.err.println();
+                            // this.regiaoCriticaQueue.remove(0);
+                            // processar();
+                            liberado++;
+                            if(liberado == processos.size()-1){
+                                processar();
+                            }
+
                         }
-                    }  
+                    }
                     catch (Exception e) {
                         System.out.println("Erro na thread do servidor: " + e.getMessage());
                         e.printStackTrace();
@@ -90,7 +96,7 @@ public class ProcessoDescentralizado implements Runnable {
         Mensagem mes = new Mensagem(nomeRegiao, this.pId);
         this.regiaoCriticaQueue.add(mes);
         this.queroEntrarNaRegiaoCritica = true;
-        
+
         for (ProcessoDescentralizado processo : processos) {
             if(processo.pId != this.pId){
                 new Thread(() -> {
@@ -99,14 +105,15 @@ public class ProcessoDescentralizado implements Runnable {
                         ObjectOutputStream out = new ObjectOutputStream(soc.getOutputStream());
                         BufferedReader reader = new BufferedReader(new InputStreamReader(soc.getInputStream()));
                         out.writeObject(mes);
-        
+
                         // Reader
-                        String response = reader.readLine();   
-                        
+                        String response = reader.readLine();
+
                         if (response.equals("OK")) {
                             System.out.println(processo.pId + " liberou " + this.pId + " para uso da area critica");
                         }
-    
+                        liberado++;
+
                         soc.close();
                     }
                     catch (Exception e) {
@@ -119,31 +126,33 @@ public class ProcessoDescentralizado implements Runnable {
     }
 
     public void processar() throws InterruptedException{
+        liberado = 0;
         this.regiaoCriticaQueue.remove(0);
         this.estaRegiaoCritica = true;
         this.queroEntrarNaRegiaoCritica = false;
         Random random = new Random();
-        
+
         System.out.println("Processo " + this.pId + " processando na regiao critica");
         Thread.sleep((random.nextInt(10) + 2) * 1000);
         System.out.println("Processo " + this.pId + " terminou");
+        this.estaRegiaoCritica = false;
 
-        if(!this.regiaoCriticaQueue.isEmpty()){
-            Mensagem mensagem = this.regiaoCriticaQueue.get(0);
-            this.regiaoCriticaQueue.remove(0);
-            this.estaRegiaoCritica = false;
-            
-            try{
-                System.out.println("Processo " + this.pId + " notificando o proximo da fila");
-                Socket soc = new Socket("localhost", processos.get(mensagem.idProcesso).porta);
-                PrintStream outr = new PrintStream(soc.getOutputStream());
-                outr.println("OK");
-                soc.close();
-            }
-            catch (Exception e) {
-                System.out.println("Erro ao notificar o proximo da fila: " + e.getMessage());
-                e.printStackTrace();
-            }    
+        for (Mensagem mes : regiaoCriticaQueue) {            
+            new Thread(() -> {
+                try{
+    
+                        System.out.println("Processo " + this.pId + " notificando "+ mes.idProcesso);
+                        Socket soc = new Socket("localhost", processos.get(mes.idProcesso).porta);
+                        PrintStream outr = new PrintStream(soc.getOutputStream());
+                        outr.println("OK");
+                        soc.close();
+                    }
+                        catch (Exception e) {
+                            System.out.println("Erro ao notificar o proximo da fila: " + e.getMessage());
+                            e.printStackTrace();
+                        }
+            }).start();
         }
+        regiaoCriticaQueue.clear();
     }
 }

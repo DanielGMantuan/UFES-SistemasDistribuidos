@@ -22,6 +22,11 @@ public class ExclusaoDescentralizada {
         Thread.sleep(2000);
         
         p2.mensagemBroadcast("critica");
+        Thread.sleep(200);
         p0.mensagemBroadcast("critica");
+
+        Thread.sleep(2000);
+
+        p1.mensagemBroadcast("critica");
     }
 }
